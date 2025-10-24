@@ -14,6 +14,8 @@ import org.jetbrains.plugins.terminal.TerminalView;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.io.File;
 
 public class ClaudeCodeToolWindowFactory implements ToolWindowFactory {
@@ -32,7 +34,11 @@ public class ClaudeCodeToolWindowFactory implements ToolWindowFactory {
         ShellTerminalWidget widget = TerminalView.getInstance(project)
                 .createLocalShellWidget(workDir, TOOL_WINDOW_ID);
 
-        panel.add(widget.getComponent(), BorderLayout.CENTER);
+        // 获取终端组件并添加键盘监听器，处理 Shift+Enter 和 Command/Ctrl+Enter
+        JComponent terminalComponent = widget.getComponent();
+        setupKeyboardShortcuts(terminalComponent, widget);
+
+        panel.add(terminalComponent, BorderLayout.CENTER);
 
         Content content = ContentFactory.getInstance().createContent(panel, "", false);
         content.putUserData(WIDGET_KEY, widget);
@@ -50,6 +56,49 @@ public class ClaudeCodeToolWindowFactory implements ToolWindowFactory {
         ApplicationManager.getApplication().invokeLater(() -> autorun(project, widget, workDir));
     }
 
+    /**
+     * 配置终端组件的键盘快捷键，处理 Shift+Enter 和 Command/Ctrl+Enter
+     */
+    private void setupKeyboardShortcuts(JComponent terminalComponent, ShellTerminalWidget widget) {
+        terminalComponent.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                int keyCode = e.getKeyCode();
+                int modifiers = e.getModifiersEx();
+
+                // 检测 Shift+Enter
+                if (keyCode == KeyEvent.VK_ENTER && (modifiers & KeyEvent.SHIFT_DOWN_MASK) != 0) {
+                    e.consume(); // 阻止默认的 Enter 行为
+                    insertNewline(widget);
+                }
+                // 检测 Command+Enter (Mac) 或 Ctrl+Enter (Windows/Linux)
+                else if (keyCode == KeyEvent.VK_ENTER &&
+                    ((modifiers & KeyEvent.META_DOWN_MASK) != 0 || (modifiers & KeyEvent.CTRL_DOWN_MASK) != 0)) {
+                    e.consume(); // 阻止默认的 Enter 行为
+                    insertNewline(widget);
+                }
+            }
+        });
+    }
+
+    /**
+     * 在终端中插入换行符，用于多行输入
+     */
+    @SuppressWarnings("deprecation")
+    private void insertNewline(ShellTerminalWidget widget) {
+        try {
+            // 发送换行符到终端，但不执行命令
+            // 注意：getTerminalStarter() 虽然已废弃，但在 IntelliJ 2023.2 中仍是兼容的方式
+            var starter = widget.getTerminalStarter();
+            if (starter != null) {
+                starter.sendString("\n", false);
+            }
+        } catch (Exception e) {
+            // 静默处理异常，避免中断用户操作
+        }
+    }
+
+    @SuppressWarnings("unused")
     private void autorun(Project project, ShellTerminalWidget widget, String workDir) {
         ClaudeCodeUtils.exec(project, widget, "claude");
     }
